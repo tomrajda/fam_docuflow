@@ -1,0 +1,62 @@
+services:
+  # database (metadata)
+  postgres_db:
+      image: postgres:16-alpine
+      container_name: docuflow_postgres
+      environment:
+        POSTGRES_USER: user
+        POSTGRES_PASSWORD: password
+        POSTGRES_DB: docuflow_db
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+    
+  # queue broker
+  redis:
+      image: redis:7-alpine
+      container_name: docuflow_redis
+  
+  # vector database
+  chroma:
+      image: chromadb/chroma
+      container_name: docuflow_chroma
+      volumes:
+        - chroma_data:/chroma/data
+  
+  # main api gateway service
+  api_gateway:
+    build: 
+      context: ./api_gateway
+    container_name: docuflow_api_gateway
+    ports:
+      - "8080:8001" 
+    depends_on:
+      - postgres_db # Metadane
+      - redis       # Kolejka
+      - chroma      # LLM Core Service będzie go używał, ale API Gateway musi czekać
+    # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    volumes:
+      - ./shared_files:/app/shared_files
+  
+  # 5. Document Processing Worker (Konsument RQ / LangChain RAG Core)
+  doc_processing_worker:
+    build: 
+      context: ./doc_processing_worker
+    container_name: docuflow_doc_worker
+    depends_on:
+      - postgres_db 
+      - redis       # Odbiera zadania
+      - chroma      # Zapisuje wektory
+    # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY} 
+    # Ważne: Musimy podpiąć ten sam wolumen Chroma, aby Worker mógł pisać do bazy wektorowej
+    volumes:
+      - chroma_data:/chroma/data
+      - ./shared_files:/app/shared_files
+
+
+volumes:
+  postgres_data:
+  chroma_data:
