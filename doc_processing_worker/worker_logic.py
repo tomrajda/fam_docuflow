@@ -37,18 +37,19 @@ def perform_ocr_if_needed(file_path: str) -> str:
 # --- Główna Funkcja Workera ---
 
 def process_document_job(file_id: str, category: str, file_path: str):
-    """
-    Główna logika przetwarzania dokumentu RAG za pomocą LangChain.
-    """
+    print(f"[*] JOB STARTED: Processing document {file_id} in category {category}")
+    
+    # Krok 0: Weryfikacja Klucza API
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") 
     if not GOOGLE_API_KEY:
         print("[ERROR] GOOGLE_API_KEY environment variable not set.")
         return False
         
-    print(f"[*] JOB STARTED: Processing document {file_id} in category {category}")
+    temp_file_path = f"/app/shared_files/{file_id}.pdf"
 
     try:
-        # 1. Ekstrakcja tekstu (obsługa PDF i ew. OCR)
-        # Zmienna file_path powinna być dostępna wewnątrz kontenera workera
+        # 1. OCR i Ładowanie (Pomijamy szczegóły implementacji)
+        print(f"OCR/Tekst: Analizowanie pliku {temp_file_path}...")
         pdf_path = perform_ocr_if_needed(file_path)
         loader = PyPDFLoader(pdf_path)
         documents = loader.load()
@@ -62,40 +63,50 @@ def process_document_job(file_id: str, category: str, file_path: str):
         texts = text_splitter.split_documents(documents)
         print(f"Split into {len(texts)} chunks.")
         
-        # 3. Embedding i zapis do Chroma (Vector Store)
+        # 2. Inicjalizacja Embeddings
         embeddings = GoogleGenerativeAIEmbeddings(
             model="models/embedding-001", 
             api_key=GOOGLE_API_KEY 
         )
         
-        # Inicjalizacja Chroma Client Settings
-        chroma_client_settings = {
-            "host": "chroma", 
-            "port": 8000,
-            "allow_reset": True # Dobra praktyka w środowisku deweloperskim
-        }
+        # 3. Zapis do ChromaDB (KRYTYCZNY PUNKT)
         
-        # Tworzenie Vector Store i dodawanie dokumentów
-        # Używamy metody .from_documents, ale dodajemy client_settings,
-        # co LangChain interpretuje jako połączenie HTTP.
-        Chroma.from_documents(
-            documents=texts,
-            embedding=embeddings,
+        # JAWNA INICJALIZACJA KLIENTA HTTP (chroma to nazwa serwisu w docker-compose)
+        chroma_client = HttpClient(host='chroma', port=8000)
+        
+        # OPCJONALNY DEBUG: Sprawdzenie, czy serwer odpowiada
+        # chroma_client.heartbeat() 
+        # print("[INFO] Pomyślnie nawiązano połączenie HTTP z ChromaDB.")
+        
+        # TWORZENIE VECTOR STORE
+        vector_store = Chroma(
+            client=chroma_client,
             collection_name=f"doc_collection_{file_id}",
-            client_settings=chroma_client_settings 
+            embedding_function=embeddings
         )
-
+        
+        # DODAWANIE DOKUMENTÓW
+        vector_store.add_documents(texts)
+        
         print(f"SUCCESS: Document {file_id} indexed in ChromaDB.")
         
     except Exception as e:
+        # BARDZO WAŻNE: Wypisz pełny błąd dla debugowania
         print(f"[ERROR] Job failed for {file_id}: {e}")
-        # W tym miejscu powinna być logika aktualizacji PostgreSQL na 'failed'
+        # Możesz dodać czyszczenie pliku tutaj (Cleaned up temporary file...)
         return False
-    
     finally:
-        # Opcjonalnie: usuń plik tymczasowy po przetworzeniu
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            print(f"Cleaned up temporary file {file_path}")
+        # Dodaj tutaj kod czyszczący plik tymczasowy
+        pass
 
     return True
+
+
+if __name__ == "__main__":
+
+    test_file_id = "825e843d-b1e3-411b-8f3b-dee4f5e3036d"
+    test_category = "Umowy"
+    test_file_path = "/home/tomek/Projekty/docuflow-project/shared_files/825e843d-b1e3-411b-8f3b-dee4f5e3036d.pdf"  # Zmień na rzeczywistą ścieżkę do testowego PDF
+
+    process_document_job(test_file_id, test_category, test_file_path)
+    

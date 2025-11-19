@@ -19,6 +19,11 @@ services:
   chroma:
       image: chromadb/chroma
       container_name: docuflow_chroma
+      # TE SEKCJE SĄ KRYTYCZNE DLA KOMUNIKACJI MIĘDZY KONENERAMI
+      expose:
+        - "8000"
+      ports:
+        - "8000:8000" # Pozwala na dostęp spoza Dockera (np. test ping)
       volumes:
         - chroma_data:/chroma/data
   
@@ -43,6 +48,7 @@ services:
   doc_processing_worker:
     build: 
       context: ./doc_processing_worker
+      dockerfile: Dockerfile
     container_name: docuflow_doc_worker
     depends_on:
       - postgres_db 
@@ -50,12 +56,24 @@ services:
       - chroma      # Zapisuje wektory
     # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
     environment:
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY} 
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_HOST=chroma # Opcjonalnie, ale dobra praktyka
+      - CHROMA_PORT=8000
     # Ważne: Musimy podpiąć ten sam wolumen Chroma, aby Worker mógł pisać do bazy wektorowej
     volumes:
       - chroma_data:/chroma/data
       - ./shared_files:/app/shared_files
 
+  llm_core_service:
+    build: ./llm_core_service
+    container_name: docuflow_llm_core
+    ports:
+      - "8002:8002" # Wystawiamy port, żeby API Gateway mógł się połączyć
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - chroma
+      - postgres_db # Opcjonalnie, jeśli będzie korzystać z metadanych
 
 volumes:
   postgres_data:

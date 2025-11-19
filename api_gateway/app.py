@@ -4,6 +4,8 @@ from redis import Redis
 from rq import Queue
 import uuid
 import os
+import requests
+
 
 # --- Konfiguracja ---
 # W Docker Compose, 'redis' to nazwa serwisu brokera.
@@ -12,6 +14,8 @@ q = Queue('default', connection=redis_conn) # Używamy domyślnej kolejki
 app = FastAPI(title="DocuFlow API Gateway")
 # Symulowane miejsce zapisu plików (na potrzeby testów lokalnych)
 UPLOAD_DIRECTORY = "/app/shared_files"
+LLM_CORE_SERVICE_URL = "http://llm_core_service:8002"
+
 
 # Upewnij się, że katalog istnieje
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
@@ -61,3 +65,22 @@ async def upload_document(
         "job_id": job.id,
         "message": "Processing started in background."
     }
+
+@app.post("/query", tags=["Q&A"])
+async def get_answer(question: str):
+    # W architekturze mikroserwisowej:
+    payload = {
+        "question": question,
+        "collection_name": "doc_collection_77d2b97c-957c-435c-ae70-46bf67db4bf0" # Dostosuj do wgranego ID
+    }
+
+    try:
+        response = requests.post(
+            f"{LLM_CORE_SERVICE_URL}/query",
+            json=payload,
+            timeout=30 # LLM może potrzebować chwili
+        )
+        response.raise_for_status() # Rzuca wyjątek dla kodów 4xx/5xx
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"LLM Core Service Unavailable: {e}")
