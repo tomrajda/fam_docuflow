@@ -5,7 +5,7 @@ from rq import Queue
 import uuid
 import os
 import requests
-
+from pydantic import BaseModel
 
 # --- Konfiguracja ---
 # W Docker Compose, 'redis' to nazwa serwisu brokera.
@@ -16,6 +16,9 @@ app = FastAPI(title="DocuFlow API Gateway")
 UPLOAD_DIRECTORY = "/app/shared_files"
 LLM_CORE_SERVICE_URL = "http://llm_core_service:8002"
 
+class QueryRequest(BaseModel):
+    question: str
+    collection_name: str
 
 # Upewnij się, że katalog istnieje
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
@@ -67,20 +70,25 @@ async def upload_document(
     }
 
 @app.post("/query", tags=["Q&A"])
-async def get_answer(question: str):
-    # W architekturze mikroserwisowej:
-    payload = {
-        "question": question,
-        "collection_name": "doc_collection_77d2b97c-957c-435c-ae70-46bf67db4bf0" # Dostosuj do wgranego ID
-    }
+async def get_answer(request_data: QueryRequest):
+    """
+    Odbiera zapytanie (question, collection_name) i przekazuje je synchronicznie do LLM Core Service.
+    """
+    
+    # Payload jest bezpośrednio obiektem Pydantic, konwertujemy go na słownik/JSON
+    payload = request_data.model_dump()
 
     try:
+        # Zmienna LLM_CORE_SERVICE_URL musi być dostępna (co już masz)
         response = requests.post(
             f"{LLM_CORE_SERVICE_URL}/query",
             json=payload,
-            timeout=30 # LLM może potrzebować chwili
+            timeout=60 # Użyj dłuższego timeoutu dla LLM
         )
-        response.raise_for_status() # Rzuca wyjątek dla kodów 4xx/5xx
+        response.raise_for_status() 
         return response.json()
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"LLM Core Service Unavailable: {e}")
+        raise HTTPException(
+            status_code=503, 
+            detail=f"LLM Core Service Unavailable or returned error: {e}"
+        )

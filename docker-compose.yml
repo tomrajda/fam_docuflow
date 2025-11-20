@@ -17,15 +17,14 @@ services:
   
   # vector database
   chroma:
-      image: chromadb/chroma
-      container_name: docuflow_chroma
-      # TE SEKCJE SĄ KRYTYCZNE DLA KOMUNIKACJI MIĘDZY KONENERAMI
-      expose:
-        - "8000"
-      ports:
-        - "8000:8000" # Pozwala na dostęp spoza Dockera (np. test ping)
-      volumes:
-        - chroma_data:/chroma/data
+        image: chromadb/chroma
+        container_name: docuflow_chroma
+        expose:
+          - "8000"
+        ports:
+          - "8000:8000"
+        volumes:
+          - chroma_data:/data
   
   # main api gateway service
   api_gateway:
