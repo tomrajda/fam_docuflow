@@ -37,6 +37,7 @@ services:
       - postgres_db # Metadane
       - redis       # Kolejka
       - chroma      # LLM Core Service będzie go używał, ale API Gateway musi czekać
+      - minio
     # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
@@ -53,6 +54,7 @@ services:
       - postgres_db 
       - redis       # Odbiera zadania
       - chroma      # Zapisuje wektory
+      - minio
     # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
@@ -74,6 +76,29 @@ services:
       - chroma
       - postgres_db # Opcjonalnie, jeśli będzie korzystać z metadanych
 
+  frontend:
+    build: ./frontend
+    container_name: docuflow_frontend
+    ports:
+      - "8081:80" 
+    depends_on:
+      - api_gateway
+
+  minio:
+      image: minio/minio
+      container_name: docuflow_minio
+      ports:
+        - "9000:9000"
+        - "9001:9001"
+      volumes:
+        - minio_data:/data
+      environment:
+        MINIO_ROOT_USER: minioadmin
+        MINIO_ROOT_PASSWORD: minioadmin
+        MINIO_BROWSER: "on" 
+      command: server /data --console-address ":9001"
+
 volumes:
   postgres_data:
   chroma_data:
+  minio_data:

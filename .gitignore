@@ -1,3 +1,6 @@
 .env
 venv/
 questions.txt
+shared_files/*
+shared_files/**
+!shared_files/.gitkeep

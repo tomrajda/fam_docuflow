@@ -13,13 +13,25 @@ from chromadb import HttpClient
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from psycopg2 import connect
 
-# Ustawienia Globalne
-# Klucz API powinien być dostarczony przez zmienne środowiskowe z Docker Compose/Kube Secret
+import boto3
+
+MINIO_ENDPOINT = "http://minio:9000" 
+MINIO_ACCESS_KEY = "minioadmin"
+MINIO_SECRET_KEY = "minioadmin"
+BUCKET_NAME = "docuflow-files"
+
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+MASTER_COLLECTION_NAME = "docuflow_master_index"
 
-# --- Funkcje Pomocnicze ---
+s3_client = boto3.client(
+    's3',
+    endpoint_url=MINIO_ENDPOINT,
+    aws_access_key_id=MINIO_ACCESS_KEY,
+    aws_secret_access_key=MINIO_SECRET_KEY,
+    config=boto3.session.Config(signature_version='s3v4'),
+    verify=False
+)
 
 def perform_ocr_if_needed(file_path: str) -> str:
     """
@@ -48,12 +60,20 @@ def process_document_job(file_id: str, category: str, file_path: str):
     temp_file_path = f"/app/shared_files/{file_id}.pdf"
 
     try:
-        # 1. OCR i Ładowanie (Pomijamy szczegóły implementacji)
-        print(f"OCR/Tekst: Analizowanie pliku {temp_file_path}...")
-        pdf_path = perform_ocr_if_needed(file_path)
-        loader = PyPDFLoader(pdf_path)
+
+        # 1. POBRANIE PLIKU Z MINIO (file_path to klucz S3, np. "3bece154.pdf")
+        obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_path)
+        pdf_content = obj['Body'].read()
+
+        # Aby PyPDFLoader mógł to wczytać, musimy zapisać plik tymczasowo na dysk Workera
+        TEMP_FILE_PATH = f"/tmp/{file_id}_temp.pdf"
+        with open(TEMP_FILE_PATH, 'wb') as tmp_file:
+            tmp_file.write(pdf_content)
+
+        pdf_path_for_loader = perform_ocr_if_needed(TEMP_FILE_PATH)
+        loader = PyPDFLoader(pdf_path_for_loader)
         documents = loader.load()
-        
+
         # 2. Podział na fragmenty (Chunking) - LangChain TextSplitters
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, 
@@ -63,6 +83,15 @@ def process_document_job(file_id: str, category: str, file_path: str):
         texts = text_splitter.split_documents(documents)
         print(f"Split into {len(texts)} chunks.")
         
+        # Przypisanie metadanych do każdego fragmentu
+        for doc in texts:
+            # Metadane są używane do filtrowania w ChromaDB
+            doc.metadata["category"] = category
+            doc.metadata["file_id"] = file_id 
+
+        print(f"Split into {len(texts)} chunks with category: {category}.")
+
+
         # 2. Inicjalizacja Embeddings
         embeddings = GoogleGenerativeAIEmbeddings(
             model="models/embedding-001", 
@@ -79,16 +108,32 @@ def process_document_job(file_id: str, category: str, file_path: str):
         # print("[INFO] Pomyślnie nawiązano połączenie HTTP z ChromaDB.")
         
         # TWORZENIE VECTOR STORE
-        vector_store = Chroma(
-            client=chroma_client,
-            collection_name=f"doc_collection_{file_id}",
-            embedding_function=embeddings
-        )
+        # vector_store = Chroma(
+        #    client=chroma_client,
+        #    collection_name=f"doc_collection_{file_id}",
+        #    embedding_function=embeddings
+        # )
         
         # DODAWANIE DOKUMENTÓW
-        vector_store.add_documents(texts)
+        # vector_store.add_documents(texts)
         
-        print(f"SUCCESS: Document {file_id} indexed in ChromaDB.")
+        #print(f"SUCCESS: Document {file_id} indexed in ChromaDB.")
+
+        # 3a. Inicjalizacja Klienta Chroma
+        chroma_client = HttpClient(host='chroma', port=8000)
+
+        # 3b. Tworzenie instancji ChromaDB z klientem (pozwala na interakcję z serwerem)
+        vector_store = Chroma(
+            client=chroma_client,
+            collection_name=MASTER_COLLECTION_NAME, 
+            embedding_function=embeddings
+        )
+
+        # 3c. Dodawanie dokumentów do istniejącej kolekcji/klienta
+        # To jest poprawna metoda dla klienta serwerowego.
+        vector_store.add_documents(texts) 
+
+        print(f"SUCCESS: Document {file_id} indexed into {MASTER_COLLECTION_NAME}.")
         
     except Exception as e:
         # BARDZO WAŻNE: Wypisz pełny błąd dla debugowania
@@ -96,8 +141,9 @@ def process_document_job(file_id: str, category: str, file_path: str):
         # Możesz dodać czyszczenie pliku tutaj (Cleaned up temporary file...)
         return False
     finally:
-        # Dodaj tutaj kod czyszczący plik tymczasowy
-        pass
+        
+        if os.path.exists(TEMP_FILE_PATH):
+            os.remove(TEMP_FILE_PATH)
 
     return True
 

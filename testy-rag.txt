@@ -1,0 +1,71 @@
+COLLECTION_ID="doc_collection_3bece154-737b-4839-a4c5-8073edc85409"
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" \
+     -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jaki jest okres wypowiedzenia w tej umowie?",
+            "collection_name": "'"${COLLECTION_ID}"'"
+          }'
+          
+COLLECTION_ID="doc_collection_3bece154-737b-4839-a4c5-8073edc85409"
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" \
+     -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jaka jest stawka w tej umowie?",
+            "collection_name": "'"${COLLECTION_ID}"'"
+          }'
+
+
+curl -X POST "http://localhost:8080/document/upload?category=Medyczne" -H "accept: application/json" -H "Content-Type: multipart/form-data" -F "file=@dok_med_testowy.pdf;type=application/pdf"
+curl -X POST "http://localhost:8080/document/upload?category=Umowy" -H "accept: application/json" -H "Content-Type: multipart/form-data" -F "file=@umowa_testowa_2.pdf;type=application/pdf"
+
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jakie sa zalecenie medyczne dla Marty?",
+            "categories_to_search": ["Medyczne"] 
+          }'
+
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jaki jest okres wypowiedzenia umowy o prace?",
+            "categories_to_search": ["Medyczne"] 
+          }'
+
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jaki jest okres wypowiedzenia umowy o prace?",
+            "categories_to_search": ["Medyczne"] 
+          }'
+
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jaki jest okres wypowiedzenia umowy o prace?",
+            "categories_to_search": ["Umowy"] 
+          }'
+
+
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jaki jest okres wypowiedzenia umowy o prace w firmie MARIUSZPOL?",
+            "categories_to_search": ["Umowy"] 
+          }'
+
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" -H "Content-Type: application/json" \
+     -d '{
+            "question": "Jaki jest okres wypowiedzenia umowy o prace, nie bierz pod uwage firmy MARIUSZPOL?",
+            "categories_to_search": ["Umowy"] 
+          }'
+
+curl -X POST "http://localhost:8080/query" \
+     -H "accept: application/json" -H "Content-Type: application/json" \
+     -d '{
+            "question": "Whats Toms notice period? Answer in Arabic.",
+            "categories_to_search": ["Umowy"] 
+          }'

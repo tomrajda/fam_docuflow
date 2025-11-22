@@ -12,3 +12,5 @@ Pillow
 pytesseract==0.3.10
 psycopg2-binary==2.9.9
 pysqlite3-binary
+boto3
+requests
