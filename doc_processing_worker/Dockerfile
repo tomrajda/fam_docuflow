@@ -3,8 +3,14 @@ FROM python:3.11-slim-bullseye
 
 # 1. Instalacja Tesseract OCR i innych narzędzi
 RUN apt-get update && \
-    apt-get install -y tesseract-ocr libtesseract-dev && \
-    apt-get clean
+    apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-pol \
+    libtesseract-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    poppler-utils \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED 1
 

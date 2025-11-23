@@ -24,6 +24,43 @@ MODEL_GENERATION = "gemini-2.5-flash-lite"
 MODEL_EMBEDDING = "models/embedding-001"
 MASTER_COLLECTION_NAME = "docuflow_master_index"
 
+# 1. Prompt GENERYCZNY (Domyślny)
+# Służy do ogólnej analizy, gdy nie wiemy, co to za dokument.
+PROMPT_GENERIC = (
+    "Jesteś ekspertem w analizie dokumentów cyfrowych po skanowaniu (OCR).\n"
+    "Twój cel: Wyciągnięcie informacji z zaszumionego tekstu.\n"
+    "ZASADY:\n"
+    "1. Tekst zawiera błędy literowe i dziwne znaki (szum OCR) - ignoruj je i rekonstruuj słowa z kontekstu.\n"
+    "2. Jeśli informacje są rozrzucone po dokumencie, próbuj je logicznie połączyć.\n"
+    "3. Nie zgaduj nazw własnych, jeśli są nieczytelne.\n"
+    "4. Odpowiadaj zwięźle i na temat.\n\n"
+    "Kontekst:\n{context}"
+)
+
+# 2. Prompt UMOWY (Prawny/Biznesowy)
+# Nastawiony na strony umowy, kwoty, daty i podpisy.
+PROMPT_CONTRACTS = (
+    "Jesteś analitykiem prawnym analizującym trudne skany umów (OCR).\n"
+    "ZASADY WNIOSKOWANIA (KRYTYCZNE):\n"
+    "1. ZASADA JEDNEGO PRACOWNIKA: Typowa umowa o pracę dotyczy jednej osoby. Jeśli w całym dokumencie (nawet w odległych fragmentach) znajdziesz nazwisko pracownika (np. w podpisie) i sekcję z kwotą wynagrodzenia, MUSISZ przypisać tę kwotę do tej osoby.\n"
+    "2. IGNORUJ UKŁAD: W OCR linie się przesuwają. Kwota '3.200 zł' może wylądować pod złym nagłówkiem. Traktuj ją jako główną stawkę, jeśli wygląda na kwotę miesięczną.\n"
+    "3. ŁĄCZ FAKTY: Nie szukaj zdania 'Kowalski zarabia X'. Szukaj faktu 'Kowalski jest w dokumencie' + faktu 'W dokumencie jest kwota X'.\n"
+    "4. Jeśli widzisz kwotę i nazwisko, napisz: 'Wynagrodzenie wynosi [KWOTA], na podstawie analizy treści umowy dotyczącej [NAZWISKO]'.\n\n"
+    "Kontekst:\n{context}"
+)
+
+# 3. Prompt MEDYCZNY (Zdrowotny)
+# Nastawiony na pacjenta, leki, diagnozy.
+PROMPT_MEDICAL = (
+    "Jesteś asystentem medycznym. Analizujesz wyniki badań, recepty i wypisy ze szpitala.\n"
+    "ZASADY WNIOSKOWANIA:\n"
+    "1. PACJENT: Szukaj imienia i nazwiska pacjenta (zwykle góra strony). Wszystkie parametry dotyczą tej osoby.\n"
+    "2. PARAMETRY: Jeśli widzisz nazwy badań (np. 'Morfologia', 'TSH') i liczby obok nich, to są wyniki.\n"
+    "3. ZALECENIA: Szukaj nazw leków i dawkowania (np. '1x1', '2 razy dziennie').\n"
+    "4. Bądź precyzyjny. W medycynie liczby są kluczowe. Jeśli cyfra jest nieczytelna, powiedz o tym.\n\n"
+    "Kontekst:\n{context}"
+)
+
 # --- Lifespan FastAPI ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,7 +90,7 @@ async def rag_query(request: QueryRequest):
         embeddings = GoogleGenerativeAIEmbeddings(model=MODEL_EMBEDDING, api_key=GOOGLE_API_KEY)
 
         # 3. LLM
-        llm = ChatGoogleGenerativeAI(model=MODEL_GENERATION, temperature=0.0, api_key=GOOGLE_API_KEY)
+        llm = ChatGoogleGenerativeAI(model=MODEL_GENERATION, temperature=0.8, api_key=GOOGLE_API_KEY)
 
         # 1. Tworzenie Retrievra (mechanizm pobierania kontekstu)
         # 1. Tworzenie filtra ChromaDB (inicjujemy jako None)
@@ -72,29 +109,37 @@ async def rag_query(request: QueryRequest):
         )
 
         # Konfiguracja parametrów wyszukiwania
-        search_kwargs = {"k": 3, "score_threshold": 0.6}
+        search_kwargs = {"k": 3, "score_threshold": 0.55}
+
         
         if chroma_filter is not None:
             search_kwargs["filter"] = chroma_filter
 
         # WAŻNE: Musimy ustawić search_type="similarity_score_threshold"
         retriever = vector_store.as_retriever(
-            search_type="similarity_score_threshold", # <--- TO JEST KLUCZOWE
+            search_type="similarity_score_threshold",
             search_kwargs=search_kwargs
         )
 
-        # 4. Prompt
-        system_prompt = (
-            "Jesteś asystentem do wyszukiwania informacji w dokumentach. "
-            "Odpowiedz na pytanie bazując WYŁĄCZNIE na poniższym kontekście. "
-            "Jeśli kontekst nie zawiera odpowiedzi, powiedz, że nie możesz jej znaleźć w dostarczonych dokumentach.\n\n"
-            "Kontekst: {context}"
-        )
+        # 4. Wybór Promptu na podstawie Kategorii
+        # Domyślnie używamy generycznego
+        selected_system_prompt = PROMPT_GENERIC
+        
+        # Sprawdzamy, co wybrał użytkownik
+        # (Zakładamy, że jeśli wybrał kilka, priorytet ma ta bardziej specyficzna)
+        categories = request.categories_to_search or []
+        
+        if "Umowy" in categories:
+            print("Selected Prompt: CONTRACTS")
+            selected_system_prompt = PROMPT_CONTRACTS
+        elif "Medyczne" in categories:
+            print("Selected Prompt: MEDICAL")
+            selected_system_prompt = PROMPT_MEDICAL
+
         prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
+            ("system", selected_system_prompt),
             ("human", "{input}"),
         ])
-        print("Prompt template created.")
 
         # 5. Document Chain
         document_chain = create_stuff_documents_chain(llm, prompt)
