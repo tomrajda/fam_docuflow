@@ -14,6 +14,7 @@ const loading = ref(false);
 const sources = ref([]);
 const uploadStatus = ref(""); // Zamiast alertów
 const isDragging = ref(false);
+const showFilters = ref(false); 
 
 // Helper: Format file size
 const formatSize = (bytes) => {
@@ -304,14 +305,46 @@ const handleQuery = async () => {
             <!-- Input Area (Fixed at bottom) -->
             <div class="mt-auto bg-slate-800/50 p-2 rounded-2xl border border-slate-700/50 flex items-end gap-2 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all shadow-lg">
               
-              <!-- Filters Toggle (Simplified for UI) -->
-              <div class="relative group">
-                 <select multiple v-model="searchCategory" class="absolute inset-0 w-10 opacity-0 cursor-pointer z-10"></select>
-                 <button class="p-3 text-slate-400 hover:text-white hover:bg-slate-700 rounded-xl transition-colors" title="Filtruj kategorie">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
-                 </button>
-                 <!-- Tooltip/Indicator -->
-                 <span v-if="searchCategory.length > 0" class="absolute top-2 right-2 w-2 h-2 bg-indigo-500 rounded-full"></span>
+              <!-- FILTER POPUP MENU -->
+              <div class="relative">
+                
+                <!-- Przycisk otwierający menu -->
+                <button 
+                  @click="showFilters = !showFilters"
+                  class="p-3 rounded-xl transition-all duration-200"
+                  :class="showFilters || searchCategory.length > 0 ? 'text-white bg-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-700'"
+                  title="Filtruj kategorie"
+                >
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                </button>
+
+                <!-- Kropka powiadomienia (jeśli coś wybrano) -->
+                <span v-if="searchCategory.length > 0" class="absolute top-2 right-2 w-2.5 h-2.5 bg-indigo-500 border-2 border-slate-800 rounded-full pointer-events-none"></span>
+
+                <!-- MENU WYBORU (Wyskakujące okienko) -->
+                <div v-if="showFilters" class="absolute bottom-full left-0 mb-4 w-48 bg-slate-900/90 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-fade-in-up">
+                  <div class="text-[10px] uppercase font-bold text-slate-500 px-3 py-2">Szukaj w:</div>
+                  
+                  <div class="space-y-1">
+                    <label class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-800 cursor-pointer transition-colors group">
+                      <input type="checkbox" value="Umowy" v-model="searchCategory" class="rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0 w-4 h-4">
+                      <span class="text-sm text-slate-300 group-hover:text-white">Umowy</span>
+                    </label>
+
+                    <label class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-800 cursor-pointer transition-colors group">
+                      <input type="checkbox" value="Medyczne" v-model="searchCategory" class="rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0 w-4 h-4">
+                      <span class="text-sm text-slate-300 group-hover:text-white">Medyczne</span>
+                    </label>
+
+                    <label class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-800 cursor-pointer transition-colors group">
+                      <input type="checkbox" value="Inne" v-model="searchCategory" class="rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0 w-4 h-4">
+                      <span class="text-sm text-slate-300 group-hover:text-white">Inne</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Tło klikalne do zamknięcia menu (opcjonalne, ale poprawia UX) -->
+                <div v-if="showFilters" @click="showFilters = false" class="fixed inset-0 z-40 cursor-default"></div>
               </div>
 
               <input
