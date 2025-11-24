@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" /> <!-- Indigo -->
+      <stop offset="100%" style="stop-color:#a855f7;stop-opacity:1" /> <!-- Purple -->
+    </linearGradient>
+  </defs>
+  
+  <!-- Tło: Zaokrąglony kwadrat z Twoim gradientem -->
+  <rect x="0" y="0" width="32" height="32" rx="8" fill="url(#grad)" />
+  
+  <!-- Ikona dokumentu -->
+  <path d="M10 8h12c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2H10c-1.1 0-2-.9-2-2V10c0-1.1.9-2 2-2z" fill="white" fill-opacity="0.2"/>
+  <path d="M11 22h10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <path d="M11 17h10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <path d="M11 12h6" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Błysk AI (gwiazdka) -->
+  <path d="M24 6l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" fill="#22d3ee" /> <!-- Cyan -->
+</svg>
