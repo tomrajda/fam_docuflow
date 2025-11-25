@@ -9,12 +9,13 @@ const selectedFile = ref(null);
 const uploadCategory = ref("Umowy");
 const queryQuestion = ref("");
 const searchCategory = ref([]);
-const answer = ref("");
+//const answer = ref("");
 const loading = ref(false);
-const sources = ref([]);
+//const sources = ref([]);
 const uploadStatus = ref(""); // Zamiast alertów
 const isDragging = ref(false);
 const showFilters = ref(false); 
+const chatHistory = ref([]); 
 
 // Helper: Format file size
 const formatSize = (bytes) => {
@@ -73,36 +74,55 @@ const handleFileUpload = async () => {
 
 const handleQuery = async () => {
   if (!queryQuestion.value) return;
+
+  // 1. Zapisz treść pytania i wyczyść input natychmiast
+  const questionText = queryQuestion.value;
+  queryQuestion.value = ""; // Dymek użytkownika przestanie się zmieniać
+  
+  // 2. Dodaj pytanie użytkownika do historii
+  chatHistory.value.push({
+    role: "user",
+    content: questionText
+  });
+
   loading.value = true;
-  answer.value = "";
-  sources.value = [];
 
   const categoriesToSearch = searchCategory.value.length > 0 
     ? searchCategory.value 
-    : ["Umowy", "Medyczne", "Inne"]; // Domyślnie szukaj wszędzie jak nic nie wybrano
-
-  const payload = {
-    question: queryQuestion.value,
-    categories_to_search: categoriesToSearch,
-  };
+    : ["Umowy", "Medyczne", "Inne"];
 
   try {
     const response = await fetch(`${API_URL}/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        question: questionText, // Używamy zapamiętanej zmiennej, nie refa!
+        categories_to_search: categoriesToSearch,
+      }),
     });
 
     const data = await response.json();
 
     if (response.ok) {
-      answer.value = data.answer || "No response.";
-      sources.value = data.source_files || [];
+      // 3. Dodaj odpowiedź AI do historii
+      chatHistory.value.push({
+        role: "assistant",
+        content: data.answer || "Brak odpowiedzi.",
+        sources: data.source_files || []
+      });
     } else {
-      answer.value = `Error RAG: ${data.detail || "Unknown error"}`;
+      chatHistory.value.push({
+        role: "assistant",
+        content: `Błąd RAG: ${data.detail || "Nieznany błąd"}`,
+        sources: []
+      });
     }
   } catch (e) {
-    answer.value = "Error connecting to the model.";
+    chatHistory.value.push({
+      role: "assistant",
+      content: "Błąd połączenia z serwerem AI.",
+      sources: []
+    });
   } finally {
     loading.value = false;
   }
@@ -228,8 +248,7 @@ const handleQuery = async () => {
           <div class="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col h-full relative overflow-hidden">
             
             <!-- Empty State (Before Search) -->
-            <div v-if="!answer && !loading" class="flex-1 flex flex-col items-center justify-center text-center opacity-60">
-              <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-6 border border-white/5">
+            <div v-if="chatHistory.length === 0 && !loading" class="flex-1 flex flex-col items-center justify-center text-center opacity-60">              <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-6 border border-white/5">
                 <svg class="w-10 h-10 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
               </div>
               <h3 class="text-xl font-semibold text-white mb-2">How can I help you?</h3>
@@ -246,60 +265,67 @@ const handleQuery = async () => {
               </div>
             </div>
 
-            <!-- Result Area -->
+            <!-- Result Area (CHAT HISTORY) -->
+            <!-- v-else odnosi się do v-if="chatHistory.length === 0 && !loading" w sekcji powitalnej (musisz tam też poprawić warunek!) -->
             <div v-else class="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-6 space-y-6">
-              <!-- User Question Bubble -->
-              <div class="flex justify-end">
-                <div class="bg-slate-800 text-white px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] shadow-md">
-                  <p>{{ queryQuestion }}</p>
-                </div>
-              </div>
-
-              <!-- AI Loading -->
-              <div v-if="loading" class="flex gap-4 max-w-[90%] animate-pulse">
-                <div class="w-10 h-10 rounded-full bg-indigo-600 flex-shrink-0 flex items-center justify-center">
-                  <svg class="w-6 h-6 text-white animate-spin-slow" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                </div>
-                <div class="space-y-3 w-full">
-                  <div class="h-4 bg-slate-800 rounded w-3/4"></div>
-                  <div class="h-4 bg-slate-800 rounded w-1/2"></div>
-                  <div class="h-4 bg-slate-800 rounded w-5/6"></div>
-                </div>
-              </div>
-
-              <!-- AI Answer -->
-              <div v-if="answer && !loading" class="flex gap-4 animate-fade-in-up">
-                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                </div>
+              
+              <!-- Pętla po historii wiadomości -->
+              <div v-for="(msg, index) in chatHistory" :key="index">
                 
-                <div class="space-y-4 max-w-[90%]">
-                  <div class="prose prose-invert prose-sm bg-transparent text-slate-200 leading-relaxed">
-                   <!-- Simple replacement for markdown rendering, in real app use marked or similar -->
-                    <p>{{ answer }}</p>
+                <!-- WIADOMOŚĆ UŻYTKOWNIKA -->
+                <div v-if="msg.role === 'user'" class="flex justify-end animate-fade-in-up">
+                  <div class="bg-slate-800 text-white px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] shadow-md">
+                    <p>{{ msg.content }}</p>
                   </div>
+                </div>
 
-                  <!-- Sources Section -->
-                  <div v-if="sources.length > 0" class="pt-4 border-t border-white/10">
-                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                      Sources
-                    </p>
-                    <div class="flex flex-wrap gap-2">
-                      <a
-                        v-for="src in sources"
-                        :key="src"
-                        :href="`${API_URL}/document/${src}`"
-                        target="_blank"
-                        class="group flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-indigo-600/20 border border-slate-700 hover:border-indigo-500/50 rounded-lg transition-all duration-200 cursor-pointer text-xs text-slate-300 hover:text-indigo-300"
-                      >
-                        <svg class="w-3 h-3 text-slate-500 group-hover:text-indigo-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"></path></svg>
-                        {{ src }}.pdf
-                      </a>
+                <!-- WIADOMOŚĆ AI -->
+                <div v-else class="flex gap-4 animate-fade-in-up">
+                  <!-- Ikona AI -->
+                  <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0 flex items-center justify-center shadow-lg shadow-indigo-500/20 h-fit">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                  </div>
+                  
+                  <div class="space-y-4 max-w-[90%]">
+                    <!-- Treść -->
+                    <div class="prose prose-invert prose-sm md:prose-base bg-transparent text-slate-200 leading-relaxed max-w-none">
+                      <p>{{ msg.content }}</p>
+                    </div>
+
+                    <!-- Źródła (tylko jeśli są w tej wiadomości) -->
+                    <div v-if="msg.sources && msg.sources.length > 0" class="pt-4 border-t border-white/10">
+                      <p class="text-xs font-bold text-slate-500 tracking-wider mb-3 flex items-center gap-2">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                        Sources
+                      </p>
+                      <div class="flex flex-wrap gap-2">
+                        <a
+                          v-for="src in msg.sources"
+                          :key="src"
+                          :href="`${API_URL}/document/${src}`"
+                          target="_blank"
+                          class="group flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-indigo-600/20 border border-slate-700 hover:border-indigo-500/50 rounded-lg transition-all duration-200 cursor-pointer text-xs text-slate-300 hover:text-indigo-300"
+                        >
+                          <svg class="w-3 h-3 text-slate-500 group-hover:text-indigo-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"></path></svg>
+                          {{ src }}.pdf
+                        </a>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+
+              <!-- LOADING INDICATOR (Pokazuje się na dole, gdy czekamy na nowe) -->
+              <div v-if="loading" class="flex gap-4 max-w-[90%] animate-pulse mt-4">
+                <div class="w-10 h-10 rounded-full bg-indigo-600 flex-shrink-0 flex items-center justify-center">
+                  <svg class="w-6 h-6 text-white animate-spin-slow" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                </div>
+                <div class="space-y-3 w-full pt-2">
+                  <div class="h-4 bg-slate-800 rounded w-3/4"></div>
+                  <div class="h-4 bg-slate-800 rounded w-1/2"></div>
+                </div>
+              </div>
+
             </div>
 
             <!-- Input Area (Fixed at bottom) -->
@@ -364,10 +390,18 @@ const handleQuery = async () => {
                 <svg class="w-5 h-5 transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
               </button>
             </div>
-             <p class="text-[10px] text-slate-600 text-center mt-2">Model can generate inaccurate information. Check sources.</p>
-
-          </div>
+              <!-- Stopka (Wrapper) -->
+              <div class="mt-8 flex-shrink-0 flex flex-col items-center gap-6 pb-3">  
+                <p class="text-[10px] text-slate-600 text-center mt-8">
+                  Model can generate inaccurate information. Check sources.
+                </p>
+                <p class="text-[10px] text-slate-600 text-center">
+                  Copyright © 2025 <strong class="text-slate-500">Tomasz Rajda</strong>. All Rights Reserved.
+                </p>
+              </div>
+            </div>
         </section>
+        
       </main>
     </div>
   </div>
