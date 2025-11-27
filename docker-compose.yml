@@ -41,10 +41,16 @@ services:
     # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - BUCKET_NAME=${MINIO_BUCKET_NAME}
     volumes:
       - ./shared_files:/app/shared_files
   
-  # 5. Document Processing Worker (Konsument RQ / LangChain RAG Core)
+  # Document Processing Worker
   doc_processing_worker:
     build: 
       context: ./doc_processing_worker
@@ -52,14 +58,20 @@ services:
     container_name: docuflow_doc_worker
     depends_on:
       - postgres_db 
-      - redis       # Odbiera zadania
-      - chroma      # Zapisuje wektory
-      - minio
-    # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
+      - redis       # Take tasks from queue
+      - chroma      # Save vectors / embeddings
+      - minio       # Access to obj storage
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - CHROMA_HOST=chroma # Opcjonalnie, ale dobra praktyka
-      - CHROMA_PORT=8000
+      - CHROMA_HOST=${CHROMA_HOST}
+      - CHROMA_PORT=${CHROMA_PORT}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - BUCKET_NAME=${MINIO_BUCKET_NAME}
+      - MASTER_COLLECTION_NAME=${MASTER_COLLECTION_NAME}
     # Ważne: Musimy podpiąć ten sam wolumen Chroma, aby Worker mógł pisać do bazy wektorowej
     volumes:
       - chroma_data:/chroma/data
@@ -72,6 +84,10 @@ services:
       - "8002:8002" # Wystawiamy port, żeby API Gateway mógł się połączyć
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_HOST=${CHROMA_HOST}
+      - CHROMA_PORT=${CHROMA_PORT}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MASTER_COLLECTION_NAME=${MASTER_COLLECTION_NAME}
     depends_on:
       - chroma
       - postgres_db # Opcjonalnie, jeśli będzie korzystać z metadanych

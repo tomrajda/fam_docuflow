@@ -1,7 +1,9 @@
-# Używamy pełniejszego obrazu Pythona opartego na Debianie, aby zainstalować Tesseract
+# We use a more complete Debian-based 
+#Python image to install Tesseract.
 FROM python:3.11-slim-bullseye
 
-# 1. Instalacja Tesseract OCR i innych narzędzi
+# Installing Tesseract OCR and 
+# other tools for document processing
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     tesseract-ocr \
@@ -16,16 +18,13 @@ ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
-# 2. Kopiowanie i instalacja zależności Pythonowych
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. Kopiowanie kodu aplikacji (run_worker.py i worker_logic.py)
 COPY . .
 
-# Wystawienie portu Uvicorn (opcjonalne, ale dobra praktyka w mikrousługach)
+# Optional
 EXPOSE 8002 
 
-# 4. Główna komenda: Uruchomienie Workera RQ
-# To jest kluczowe: kontener musi uruchomić konsumenta kolejki
+# Run RQ Worker
 CMD ["python", "run_worker.py"]

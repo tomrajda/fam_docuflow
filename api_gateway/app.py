@@ -9,11 +9,11 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 import boto3
-from botocore.config import Config
+
 from contextlib import asynccontextmanager
 
 from fastapi.responses import StreamingResponse
-import botocore.exceptions
+
 # Nowa Konfiguracja MinIO/S3 (używamy boto3, bo jest standardem)
 
 MINIO_ENDPOINT = "http://minio:9000" # Wewnętrzny adres serwisu
