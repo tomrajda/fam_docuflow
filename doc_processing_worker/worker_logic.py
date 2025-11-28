@@ -1,8 +1,3 @@
-# Questions
-# 1. __import__('pysqlite3') usage
-# 2. czym jest klient s3, czym jest klient chroma db, 
-# zrozumienie pojecia klienta w tym kontekscie
-
 # Standard libraries and environment patch
 import os
 import sys
@@ -35,12 +30,10 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 
 # Environment Variables
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME","docuflow-files")
-MASTER_COLLECTION_NAME = os.getenv("MASTER_COLLECTION_NAME", "docuflow_master_index")
 CHROMA_HOST = os.getenv("CHROMA_HOST")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT"))
 
@@ -53,6 +46,9 @@ s3_client = boto3.client(
     config=boto3.session.Config(signature_version='s3v4'),
     verify=False
 )
+
+# Client initialization for connection to ChromaDB server
+chroma_client = HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
 
 def ocr_pdf_to_text(pdf_path: str, output_txt_path: str):
     """
@@ -108,8 +104,8 @@ def process_document_job(file_id: str, category: str, file_path: str):
     """
 
     # Verify Google API Key
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") 
-    
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
     if not GOOGLE_API_KEY:
         print("Error: GOOGLE_API_KEY environment variable not set.")
         return False
@@ -168,11 +164,9 @@ def process_document_job(file_id: str, category: str, file_path: str):
         )
         
         # Save embeddings to ChromaDB vector store
-
-        # Client initialization for connection to ChromaDB server
-        chroma_client = HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
-
         # Creating a ChromaDB instance with a client
+        MASTER_COLLECTION_NAME = os.getenv("MASTER_COLLECTION_NAME", "docuflow_master_index")
+
         vector_store = Chroma(
             client=chroma_client,
             collection_name=MASTER_COLLECTION_NAME, 

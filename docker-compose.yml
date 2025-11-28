@@ -49,6 +49,7 @@ services:
       - BUCKET_NAME=${MINIO_BUCKET_NAME}
     volumes:
       - ./shared_files:/app/shared_files
+    command: uvicorn app:app --host 0.0.0.0 --port 8001 --reload
   
   # Document Processing Worker
   doc_processing_worker:
@@ -72,10 +73,10 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - BUCKET_NAME=${MINIO_BUCKET_NAME}
       - MASTER_COLLECTION_NAME=${MASTER_COLLECTION_NAME}
-    # Ważne: Musimy podpiąć ten sam wolumen Chroma, aby Worker mógł pisać do bazy wektorowej
     volumes:
-      - chroma_data:/chroma/data
+      - chroma_data:/chroma/data          #local path:container path
       - ./shared_files:/app/shared_files
+      - ./doc_processing_worker:/app
 
   llm_core_service:
     build: ./llm_core_service
