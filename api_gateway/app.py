@@ -1,42 +1,40 @@
-# api_gateway/app.py
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from redis import Redis
-from rq import Queue
-import uuid
+# Standard libraries and environment patch
 import os
+import sys
 import requests
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-
-import boto3
-
+import uuid
 from contextlib import asynccontextmanager
 
+__import__('pysqlite3')
+import pysqlite3 as sqlite3
+sys.modules['sqlite3'] = sqlite3
+
+# Web Framework
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-# Nowa Konfiguracja MinIO/S3 (używamy boto3, bo jest standardem)
+# Message Broker & Queue
+from redis import Redis
+from rq import Queue
 
-MINIO_ENDPOINT = "http://minio:9000" # Wewnętrzny adres serwisu
-MINIO_ACCESS_KEY = "minioadmin"
-MINIO_SECRET_KEY = "minioadmin"
-BUCKET_NAME = "docuflow-files" # Stała nazwa zasobnika
+# External libraries
+import boto3
 
-# --- Konfiguracja ---
-# W Docker Compose, 'redis' to nazwa serwisu brokera.
-redis_conn = Redis(host='redis', port=6379)
-queue = Queue('default', connection=redis_conn) # Używamy domyślnej kolejki
+# Data Validation & Models
+from pydantic import BaseModel
 
-# Symulowane miejsce zapisu plików (na potrzeby testów lokalnych)
-UPLOAD_DIRECTORY = "/app/shared_files"
-LLM_CORE_SERVICE_URL = "http://llm_core_service:8002"
+# Environment Variables
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
+MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME","docuflow-files")
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = int(os.getenv("REDIS_PORT"))
+LLM_CORE_SERVICE_URL = os.getenv("LLM_CORE_SERVICE_URL")
+RAW_ORIGINS = os.getenv("CORS_ORIGINS")
 
-origins = [
-    "http://localhost:8081",  # Adres, z którego będzie działał frontend
-    "http://127.0.0.1:8081",
-]
-
-
-
+# MinIO/S3 Client initializaton
 s3_client = boto3.client(
     's3',
     endpoint_url=MINIO_ENDPOINT,
@@ -46,23 +44,42 @@ s3_client = boto3.client(
     verify=False
 )
 
+# Redis Queue Client initialization
+redis_conn = Redis(host=REDIS_HOST, port=REDIS_PORT)
+queue = Queue('default', connection=redis_conn)
+
+# CORS Configuration
+origins = [origin.strip() for origin in RAW_ORIGINS.split(",")]
+
+# Pydantic Models (Schemas)
 class QueryRequest(BaseModel):
     question: str
     categories_to_search: list[str] | None = None
 
-# Upewnij się, że katalog istnieje
-os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
+# Helper functions
+def create_bucket_if_not_exists():
+    """
+    Creates the MinIO/S3 bucket if it does not exist.
+    """
+    
+    try:
+        s3_client.head_bucket(Bucket=MINIO_BUCKET_NAME)
+
+    except s3_client.exceptions.ClientError:
+        s3_client.create_bucket(Bucket=MINIO_BUCKET_NAME)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # KOD WYKONYWANY PRZY STARCIE (Zamiast on_event("startup"))
+    # executed on startup
     create_bucket_if_not_exists()
     yield
-    # KOD WYKONYWANY PRZY ZAMYKANIU (Zamiast on_event("shutdown"))
+    # executed on shutdown
     pass
 
-# Inicjalizacja FastAPI musi używać Lifespan
+# App initialization 
 app = FastAPI(title="DocuFlow API Gateway", lifespan=lifespan)
+
+# App Middleware initialization
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -73,42 +90,52 @@ app.add_middleware(
 
 @app.get("/", tags=["Healthcheck"])
 def health_check():
-    """Sprawdza, czy API Gateway jest aktywne."""
+    """
+    Healthcheck endpoint to verify that the API Gateway is running."""
     return {"status": "API Gateway is running", "redis_queue_status": queue.connection.ping()}
 
 @app.post("/document/upload", tags=["Documents"])
 async def upload_document(
     file: UploadFile = File(...), 
-    category: str = "Umowy" # Parametr dodany przez front-end
+    category: str = "Umowy"
     ):
     """
-    Przyjmuje plik, zapisuje go i wysyła zadanie do workera przez Redis Queue.
+    Accepts the file, saves it, and 
+    sends the task to the worker via Redis Queue.
+
+    :param file: UploadFile object 
+    :type file: str
+    :param category: Document category
+    :type category: str
     """
+
     if file.content_type != 'application/pdf':
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
-    # 1. Generowanie unikalnego ID i ścieżki
+    # Generating a unique ID and path
     file_id = str(uuid.uuid4())
-    file_location = f"{file_id}.pdf" # To będzie klucz (nazwa pliku) w buckecie
+    # key (file name) in the bucket
+    file_location = f"{file_id}.pdf"
 
-    # 2. Zapis pliku do MinIO (bezpośrednio z pamięci)
+    # Save file to MinIO/S3
     try:
         content = await file.read()
         s3_client.put_object(
-            Bucket=BUCKET_NAME,
+            Bucket=MINIO_BUCKET_NAME,
             Key=file_location,
             Body=content,
             ContentType='application/pdf'
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload to MinIO: {e}")
 
-    # 3. Umieszczenie zadania w kolejce RQ (przekazujemy klucz S3)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to MinIO/S3: {e}")
+
+    # Add a task to RQ queue 
     job = queue.enqueue(
         'worker_logic.process_document_job',
         file_id=file_id, 
         category=category,
-        file_path=file_location, # Przekazujemy klucz S3, nie ścieżkę dyskową!
+        file_path=file_location,
         job_timeout='1h' 
     )
     
@@ -122,58 +149,57 @@ async def upload_document(
 @app.post("/query", tags=["Q&A"])
 async def get_answer(request_data: QueryRequest):
     """
-    Odbiera zapytanie (question, collection_name) i przekazuje je synchronicznie do LLM Core Service.
+    Receives the query and forwards 
+    it synchronously to the LLM Core Service.
+
+    :request_data: QueryRequest object
+    :type request_data: QueryRequest
     """
     
-    # Payload jest bezpośrednio obiektem Pydantic, konwertujemy go na słownik/JSON
+    # Payload is Pydantic obj -> convert to Dict/JSON
     payload = request_data.model_dump()
 
     try:
-        # Zmienna LLM_CORE_SERVICE_URL musi być dostępna (co już masz)
         response = requests.post(
             f"{LLM_CORE_SERVICE_URL}/query",
             json=payload,
-            timeout=60 # Użyj dłuższego timeoutu dla LLM
+            timeout=60
         )
         response.raise_for_status() 
         return response.json()
+    
     except requests.exceptions.RequestException as e:
         raise HTTPException(
             status_code=503, 
             detail=f"LLM Core Service Unavailable or returned error: {e}"
         )
 
-# Funkcja do tworzenia Bucketa przy starcie (niezbędne, bo MinIO nie tworzy go automatycznie)
-def create_bucket_if_not_exists():
-    try:
-        s3_client.head_bucket(Bucket=BUCKET_NAME)
-    except s3_client.exceptions.ClientError:
-        s3_client.create_bucket(Bucket=BUCKET_NAME)
-
 @app.get("/document/{file_id}")
 async def download_document(file_id: str):
     """
-    Pobiera plik z MinIO i zwraca go jako strumień PDF do przeglądarki.
+    Downloads a file from MinIO and 
+    returns it as a PDF stream to the browser.
+
+    :file_id: File identifier
+    :type file_id: str   
     """
-    # Klucz w MinIO to UUID + .pdf. Sprawdzamy, czy ID już ma rozszerzenie.
+
+    # UUID key in MinIO/S3
     key = f"{file_id}.pdf" if not file_id.endswith('.pdf') else file_id
 
     try:
-        # Pobieramy obiekt z MinIO (nie ściągamy całego do RAM, tylko otwieramy strumień)
-        file_obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=key)
+        # Get obj from MinIO/S3
+        file_obj = s3_client.get_object(Bucket=MINIO_BUCKET_NAME, Key=key)
 
-        # Zwracamy jako StreamingResponse - przeglądarka rozpozna PDF
+        # Return as StreamingResponse
         return StreamingResponse(
             file_obj['Body'], 
             media_type="application/pdf",
+            # 'inline' open file in new window
             headers={"Content-Disposition": f"inline; filename={key}"} 
-            # 'inline' sprawia, że otwiera się w oknie, 'attachment' pobrałoby plik
         )
 
     except s3_client.exceptions.NoSuchKey:
-        raise HTTPException(status_code=404, detail="Plik nie został znaleziony w MinIO")
+        raise HTTPException(status_code=404, detail="File not found in MinIO/S3")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Błąd pobierania pliku: {e}")
-
-
-
+        raise HTTPException(status_code=500, detail=f"File download error: {e}")
