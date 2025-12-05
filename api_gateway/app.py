@@ -91,7 +91,9 @@ app.add_middleware(
 @app.get("/", tags=["Healthcheck"])
 def health_check():
     """
-    Healthcheck endpoint to verify that the API Gateway is running."""
+    Healthcheck endpoint to verify that the API Gateway is running.
+    """
+    
     return {"status": "API Gateway is running", "redis_queue_status": queue.connection.ping()}
 
 @app.post("/document/upload", tags=["Documents"])

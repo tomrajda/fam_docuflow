@@ -34,11 +34,10 @@ services:
     ports:
       - "8080:8001" 
     depends_on:
-      - postgres_db # Metadane
-      - redis       # Kolejka
-      - chroma      # LLM Core Service będzie go używał, ale API Gateway musi czekać
+      - postgres_db 
+      - redis       
+      - chroma      
       - minio
-    # Wstrzyknięcie klucza API (Użyj swojego prawdziwego klucza)
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - REDIS_HOST=${REDIS_HOST}
@@ -53,7 +52,7 @@ services:
       - ./shared_files:/app/shared_files
     command: uvicorn app:app --host 0.0.0.0 --port 8001 --reload
   
-  # Document Processing Worker
+  # document processing worker
   doc_processing_worker:
     build: 
       context: ./doc_processing_worker
@@ -80,21 +79,24 @@ services:
       - ./shared_files:/app/shared_files
       - ./doc_processing_worker:/app
 
+  # LLM Core service
   llm_core_service:
     build: ./llm_core_service
     container_name: docuflow_llm_core
     ports:
-      - "8002:8002" # Wystawiamy port, żeby API Gateway mógł się połączyć
+      - "8002:8002"
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - CHROMA_HOST=${CHROMA_HOST}
       - CHROMA_PORT=${CHROMA_PORT}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MODEL_GENERATION=${MODEL_GENERATION}
+      - MODEL_EMBEDDING=${MODEL_EMBEDDING}
       - MASTER_COLLECTION_NAME=${MASTER_COLLECTION_NAME}
     depends_on:
       - chroma
-      - postgres_db # Opcjonalnie, jeśli będzie korzystać z metadanych
+      - postgres_db
 
+  # frontend service
   frontend:
     build: ./frontend
     container_name: docuflow_frontend
@@ -103,6 +105,7 @@ services:
     depends_on:
       - api_gateway
 
+  # MinIO object storage (s3)
   minio:
       image: minio/minio
       container_name: docuflow_minio
