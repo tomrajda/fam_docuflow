@@ -51,7 +51,9 @@ services:
     volumes:
       - ./shared_files:/app/shared_files
     command: uvicorn app:app --host 0.0.0.0 --port 8001 --reload
-  
+    #networks:
+    #    - app-network
+
   # document processing worker
   doc_processing_worker:
     build: 
@@ -120,6 +122,23 @@ services:
         MINIO_BROWSER: "on" 
       command: server /data --console-address ":9001"
 
+#  frontend_streamlit:
+#      build: ./frontend_streamlit
+#      container_name: chat_frontend
+#      ports:
+#        - "8501:8501"  # Dostęp do UI przez przeglądarkę
+#      environment:
+#        # Kluczowe: Streamlit musi wiedzieć, jak nazywa się kontener API Gateway w sieci Dockera
+#        - API_GATEWAY_URL=http://docuflow_api_gateway:8001
+#      depends_on:
+#        - api_gateway  # Czeka aż Gateway wstanie
+#      networks:
+#        - app-network # Musi być w tej samej sieci co Gateway
+
+#networks:
+#  app-network:
+#    driver: bridge
+          
 volumes:
   postgres_data:
   chroma_data:

@@ -7,3 +7,4 @@ python-multipart # upload file
 requests
 boto3 
 minio
+pysqlite3-binary
